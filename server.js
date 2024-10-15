@@ -6,7 +6,6 @@ const csvParser = require('csv-parser');
 const fs = require('fs');
 require('dotenv').config();
 
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -16,11 +15,7 @@ const upload = multer({ dest: 'uploads/' });
 
 // PostgreSQL connection
 const pool = new Pool({
-  user: process.env.PG_USER, // PostgreSQL username
-  host: process.env.PG_HOST,
-  database: process.env.PG_DATABASE, // database name
-  password: process.env.PG_PASSWORD, // PostgreSQL password
-  port: process.env.PG_PORT,
+  connectionString: process.env.DATABASE_URL, // Use DATABASE_URL directly
 });
 
 // Simple API route to get all health facilities
@@ -45,40 +40,27 @@ app.get('/api/facility-types', async (req, res) => {
     }
 });
 
-// to handle csv 
-
 // Endpoint to handle CSV uploads
 app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
     const filePath = req.file.path;
-  
-    // Array to hold the parsed CSV data
     const data = [];
     let headers = [];
-  
-    // Stream the CSV file and parse it
+
     fs.createReadStream(filePath)
       .pipe(csvParser())
       .on('data', (row) => {
         if (headers.length === 0) {
             headers = Object.keys(row).map(header => header.trim());
         }
-        data.push(row); // Add each parsed row to the data array
+        data.push(row);
       })
       .on('end', async () => {
         try {
-          // Insert each row into the PostgreSQL database
           for (const row of data) {
-            // Constructing the column names and placeholders dynamically
             const columns = headers.join(', ');
             const placeholders = headers.map((_, index) => `$${index + 1}`).join(', ');
-  
-             // Create the SQL query targeting the health_facilities table
             const queryText = `INSERT INTO temp_upload (${columns}) VALUES (${placeholders}) RETURNING *;`;
-  
-            // Extract values based on the current row's data
             const values = headers.map(header => row[header]);
-  
-            // Execute the query
             await pool.query(queryText, values);
           }
           res.status(200).json({ message: 'CSV data successfully uploaded!' });
@@ -94,8 +76,9 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
         res.status(500).json({ error: 'Error reading CSV file' });
       });
   });
-//   get uploaded facilities
-  app.get('/api/uploaded-facilities', async (req, res) => {
+
+// Endpoint to get uploaded facilities
+app.get('/api/uploaded-facilities', async (req, res) => {
     console.log('Received request for uploaded facilities');
     try {
         const result = await pool.query('SELECT * FROM temp_upload');
@@ -106,7 +89,6 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
     }
 });
 
-// end
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
